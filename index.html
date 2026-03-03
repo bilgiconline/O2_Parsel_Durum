@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Konya RoofEdge–Parsel Eşleşme Haritası</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v9.2.0/ol.css">
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; }
+    #map { width: 100%; height: 100%; }
+    .ol-zoom { left: auto; right: 12px; }
+    .ol-attribution { font-size: 10px; }
+    .panel {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: rgba(255,255,255,0.96);
+      border-radius: 10px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.18);
+      padding: 14px 18px;
+      max-width: 300px;
+      z-index: 1000;
+    }
+    .panel h2 { margin: 0 0 12px 0; font-size: 1.1rem; color: #1a365d; font-weight: 600; }
+    .basemap-group { margin-bottom: 14px; }
+    .basemap-group label { display: block; font-size: 0.75rem; color: #4a5568; margin-bottom: 6px; font-weight: 600; }
+    .basemap-btn {
+      display: block;
+      width: 100%;
+      padding: 8px 12px;
+      margin-bottom: 4px;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      background: #fff;
+      cursor: pointer;
+      font-size: 0.85rem;
+      text-align: left;
+      transition: all 0.15s;
+    }
+    .basemap-btn:hover { background: #f7fafc; border-color: #cbd5e0; }
+    .basemap-btn.active { background: #3182ce; color: #fff; border-color: #3182ce; }
+    .layer-group { margin-top: 14px; padding-top: 14px; border-top: 1px solid #e2e8f0; }
+    .layer-group label { display: block; font-size: 0.75rem; color: #4a5568; margin-bottom: 8px; font-weight: 600; }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 0;
+      font-size: 0.8rem;
+      cursor: pointer;
+      border-radius: 4px;
+      padding-left: 8px;
+      margin-left: -8px;
+    }
+    .legend-item:hover { background: #f0f4f8; }
+    .legend-swatch { width: 20px; height: 20px; border-radius: 4px; flex-shrink: 0; border: 2px solid rgba(0,0,0,0.3); }
+    .legend-count { color: #718096; font-size: 0.75rem; }
+    #info {
+      position: absolute;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255,255,255,0.95);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      max-width: 90%;
+      display: none;
+      z-index: 1000;
+    }
+    #load-status { display: none; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div class="panel">
+    <h2>🗺️ RoofEdge–Parsel Eşleşme</h2>
+    <div class="basemap-group">
+      <label>Arka plan harita</label>
+      <button class="basemap-btn active" data-basemap="osm">OpenStreetMap</button>
+      <button class="basemap-btn" data-basemap="esri-street">Esri World Street (etiketli)</button>
+      <button class="basemap-btn" data-basemap="esri-imagery">Esri World Imagery</button>
+      <button class="basemap-btn" data-basemap="esri-topo">Esri World Topo (etiketli)</button>
+    </div>
+    <div class="layer-group">
+      <label>Lejant – Katmanlar</label>
+      <div class="legend-item" data-layer="roof_eslesen">
+        <span class="legend-swatch" style="background:#22c55e;border-color:#16a34a;"></span>
+        <span>RoofEdge eşleşen <span class="legend-count">(~2.969)</span></span>
+      </div>
+      <div class="legend-item" data-layer="parsel_eslesen">
+        <span class="legend-swatch" style="background:rgba(34,197,94,0.4);border-color:#16a34a;"></span>
+        <span>Parsel eşleşen <span class="legend-count">(~2.969)</span></span>
+      </div>
+      <div class="legend-item" data-layer="roof_eslesmeyen">
+        <span class="legend-swatch" style="background:#ef4444;border-color:#dc2626;"></span>
+        <span>RoofEdge eşleşmeyen <span class="legend-count">(~7.296)</span></span>
+      </div>
+      <div class="legend-item" data-layer="parsel_eslesmeyen">
+        <span class="legend-swatch" style="background:rgba(239,68,68,0.35);border-color:#dc2626;"></span>
+        <span>Parsel eşleşmeyen <span class="legend-count">(24.425)</span></span>
+      </div>
+    </div>
+  </div>
+  <div id="info"></div>
+  <div id="load-status"></div>
+
+  <script type="module">
+    /**
+     * Veri linkleri (GeoJSON veya SHP zip):
+     * GitHub O2_Parsel_Durum repo'sundan JsDelivr ile yüklü.
+     */
+    const DATA_BASE_URL = 'https://cdn.jsdelivr.net/gh/bilgiconline/O2_Parsel_Durum@main/'
+
+    import shp from 'https://esm.sh/shpjs@6.2.0'
+    import Map from 'https://esm.sh/ol@9.2.0/Map.js'
+    import View from 'https://esm.sh/ol@9.2.0/View.js'
+    import TileLayer from 'https://esm.sh/ol@9.2.0/layer/Tile.js'
+    import VectorLayer from 'https://esm.sh/ol@9.2.0/layer/Vector.js'
+    import VectorSource from 'https://esm.sh/ol@9.2.0/source/Vector.js'
+    import GeoJSON from 'https://esm.sh/ol@9.2.0/format/GeoJSON.js'
+    import OSM from 'https://esm.sh/ol@9.2.0/source/OSM.js'
+    import XYZ from 'https://esm.sh/ol@9.2.0/source/XYZ.js'
+    import { fromLonLat } from 'https://esm.sh/ol@9.2.0/proj.js'
+    import Fill from 'https://esm.sh/ol@9.2.0/style/Fill.js'
+    import Stroke from 'https://esm.sh/ol@9.2.0/style/Stroke.js'
+    import Style from 'https://esm.sh/ol@9.2.0/style/Style.js'
+
+    const KONYA_CENTER = fromLonLat([32.45, 37.87])
+    const BASEMAPS = {
+      osm: new TileLayer({ source: new OSM(), visible: true }),
+      'esri-street': new TileLayer({
+        source: new XYZ({
+          url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+          crossOrigin: 'anonymous'
+        }),
+        visible: false
+      }),
+      'esri-imagery': new TileLayer({
+        source: new XYZ({
+          url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+          crossOrigin: 'anonymous'
+        }),
+        visible: false
+      }),
+      'esri-topo': new TileLayer({
+        source: new XYZ({
+          url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+          crossOrigin: 'anonymous'
+        }),
+        visible: false
+      })
+    }
+
+    const LAYER_CONFIG = [
+      { key: 'roof_eslesen', zip: 'RoofEdge_Eslesenler.zip', geojson: 'roof_eslesen.geojson', fill: 'rgba(34,197,94,0.5)', stroke: '#16a34a', strokeWidth: 2 },
+      { key: 'parsel_eslesen', zip: 'Parsel_Eslesenler.zip', geojson: 'parsel_eslesen.geojson', fill: 'rgba(34,197,94,0.25)', stroke: '#16a34a', strokeWidth: 1.5 },
+      { key: 'roof_eslesmeyen', zip: 'RoofEdge_Eslesmeyenler.zip', geojson: 'roof_eslesmeyen.geojson', fill: 'rgba(239,68,68,0.5)', stroke: '#dc2626', strokeWidth: 2 },
+      { key: 'parsel_eslesmeyen', zip: 'Parsel_Eslesmeyenler.zip', geojson: 'parsel_eslesmeyen.geojson', fill: 'rgba(239,68,68,0.2)', stroke: '#dc2626', strokeWidth: 1 }
+    ]
+
+    const layers = {}
+    const statusEl = document.getElementById('load-status')
+    const geoFormat = new GeoJSON()
+
+    async function loadLayer(cfg) {
+      const base = DATA_BASE_URL || ''
+      const src = new VectorSource()
+      const layer = new VectorLayer({
+        source: src,
+        style: new Style({
+          fill: new Fill({ color: cfg.fill }),
+          stroke: new Stroke({ color: cfg.stroke, width: cfg.strokeWidth })
+        }),
+        visible: true
+      })
+      layers[cfg.key] = layer
+      return layer
+
+      const showErr = (msg) => {
+        statusEl.innerHTML = msg
+        statusEl.style.cssText = 'position:absolute;bottom:80px;left:50%;transform:translateX(-50%);background:#fef2f2;padding:10px 16px;border-radius:8px;font-size:0.8rem;max-width:90%;z-index:1000;color:#b91c1c;display:block;'
+      }
+
+      try {
+        const zipUrl = base + cfg.zip
+        const geojson = await shp(zipUrl)
+        const fc = Array.isArray(geojson) ? geojson[0] : geojson
+        if (fc && fc.type === 'FeatureCollection') {
+          const features = geoFormat.readFeatures(fc, { dataProjection: 'EPSG:4326', featureProjection: 'EPSG:3857' })
+          src.addFeatures(features)
+          statusEl.textContent = ''
+        } else {
+          const geoUrl = base + cfg.geojson
+          const res = await fetch(geoUrl)
+          if (!res.ok) throw new Error(res.status)
+          const fc2 = await res.json()
+          src.addFeatures(geoFormat.readFeatures(fc2, { dataProjection: 'EPSG:4326', featureProjection: 'EPSG:3857' }))
+          statusEl.textContent = ''
+        }
+      } catch (e1) {
+        try {
+          const geoUrl = base + cfg.geojson
+          const res = await fetch(geoUrl)
+          if (!res.ok) throw new Error(res.status)
+          const fc = await res.json()
+          const features = geoFormat.readFeatures(fc, { dataProjection: 'EPSG:4326', featureProjection: 'EPSG:3857' })
+          src.addFeatures(features)
+          statusEl.textContent = ''
+        } catch (e2) {
+          showErr('Hata: <code>' + cfg.zip + '</code> veya <code>' + cfg.geojson + '</code> yüklenemedi. Dosya linklerini kontrol edin.')
+        }
+      }
+    }
+
+    const map = new Map({
+      target: 'map',
+      layers: Object.values(BASEMAPS),
+      view: new View({ center: KONYA_CENTER, zoom: 11, minZoom: 8, maxZoom: 19 })
+    })
+
+    for (const cfg of LAYER_CONFIG) {
+      const layer = await loadLayer(cfg)
+      if (layer) map.addLayer(layer)
+    }
+
+    document.querySelectorAll('.basemap-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.basemap-btn').forEach(b => b.classList.remove('active'))
+        btn.classList.add('active')
+        const id = btn.dataset.basemap
+        Object.keys(BASEMAPS).forEach(k => BASEMAPS[k].setVisible(k === id))
+      })
+    })
+
+    document.querySelectorAll('.legend-item').forEach(el => {
+      el.addEventListener('click', () => {
+        const key = el.dataset.layer
+        if (layers[key]) {
+          const v = !layers[key].getVisible()
+          layers[key].setVisible(v)
+          el.style.opacity = v ? '1' : '0.5'
+        }
+      })
+    })
+
+    const infoEl = document.getElementById('info')
+    map.on('pointermove', (evt) => {
+      const feat = map.forEachFeatureAtPixel(evt.pixel, f => f)
+      if (feat) {
+        const props = feat.getProperties()
+        const parts = []
+        if (props.ZeminRef) parts.push('ZeminRef: ' + props.ZeminRef)
+        if (props.YapiId) parts.push('YapiId: ' + props.YapiId)
+        infoEl.textContent = parts.length ? parts.join(' • ') : '—'
+        infoEl.style.display = 'block'
+      } else {
+        infoEl.style.display = 'none'
+      }
+    })
+  </script>
+</body>
+</html>
