@@ -177,7 +177,6 @@
         visible: true
       })
       layers[cfg.key] = layer
-      return layer
 
       const showErr = (msg) => {
         statusEl.innerHTML = msg
@@ -213,6 +212,7 @@
           showErr('Hata: <code>' + cfg.zip + '</code> veya <code>' + cfg.geojson + '</code> yüklenemedi. Dosya linklerini kontrol edin.')
         }
       }
+      return layer
     }
 
     const map = new Map({
